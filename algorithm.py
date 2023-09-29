@@ -75,8 +75,8 @@ def generate_dat(seed, d1, d2, r, tau, noise_sd):
     #z_vec = (zz_vec @ zz_vec.T - np.mean(zz_vec @ zz_vec.T)).reshape(-1,)
     e_vec = np.random.normal(0, 1, d1 * d2)
 
-    treat_vec = (z_vec + e_vec > 1.0)*1.0
-    # treat_vec = (z_vec > 1.0)*1.0
+    # treat_vec = (z_vec + e_vec > 1.0)*1.0 # uncomment this for instrument
+    treat_vec = (z_vec > 1.0)*1.0 # uncomment this for no-instrument
     e_vec_treat = e_vec[np.where(treat_vec > 0)]
     e_vec_control = e_vec[np.where(treat_vec == 0)]
     obs_treat = create_obs_by_group(treat_vec, d1, 1, b, noise_sd, tau, e_vec_treat)
@@ -140,3 +140,21 @@ def worker_cmm(seed, d1, d2, r, tau, noise_sd):
     # using a suggested rank of r since we know the rank
     M, tau, M_raw, tau_raw, t1, t2, l = DC_PR_with_suggested_rank(O_corrected, T_corrected, suggest_r = r)
     return M, tau, M_raw, tau_raw, b, t1, t2, l
+
+@ray.remote
+def worker_2sls(seed, d1, d2, r, tau, noise_sd):
+    b, z_vec, treat_mat, outcome_mat = generate_dat(seed, d1, d2, r, tau, noise_sd)
+    h_z_vec = opt_instrument(z_vec, treat_mat)
+    P_Z = h_z_vec.dot(inv(h_z_vec.T.dot(h_z_vec)).dot(h_z_vec.T))
+    treat_vec = treat_mat.reshape([d1*d2, 1])
+    outcome_vec = outcome_mat.reshape([d1*d2, 1])
+    tau = inv(treat_vec.T @ P_Z @ treat_vec) * (treat_vec.T @ P_Z @ outcome_vec)
+    return tau
+
+@ray.remote
+def worker_ols(seed, d1, d2, r, tau, noise_sd):
+    b, z_vec, treat_mat, outcome_mat = generate_dat(seed, d1, d2, r, tau, noise_sd)
+    treat_vec = treat_mat.reshape([d1*d2, 1])
+    outcome_vec = outcome_mat.reshape([d1*d2, 1])
+    tau = inv(treat_vec.T @ treat_vec) * (treat_vec.T @ outcome_vec)
+    return tau
