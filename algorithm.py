@@ -75,8 +75,8 @@ def generate_dat(seed, d1, d2, r, tau, noise_sd):
     #z_vec = (zz_vec @ zz_vec.T - np.mean(zz_vec @ zz_vec.T)).reshape(-1,)
     e_vec = np.random.normal(0, 1, d1 * d2)
 
-    # treat_vec = (z_vec + e_vec > 1.0)*1.0 # uncomment this for instrument
-    treat_vec = (z_vec > 1.0)*1.0 # uncomment this for no-instrument
+    treat_vec = (z_vec + e_vec > 1.0)*1.0 # uncomment this for instrument
+    #treat_vec = (z_vec > 1.0)*1.0 # uncomment this for no-instrument
     e_vec_treat = e_vec[np.where(treat_vec > 0)]
     e_vec_control = e_vec[np.where(treat_vec == 0)]
     obs_treat = create_obs_by_group(treat_vec, d1, 1, b, noise_sd, tau, e_vec_treat)
@@ -146,15 +146,16 @@ def worker_2sls(seed, d1, d2, r, tau, noise_sd):
     b, z_vec, treat_mat, outcome_mat = generate_dat(seed, d1, d2, r, tau, noise_sd)
     h_z_vec = opt_instrument(z_vec, treat_mat)
     P_Z = h_z_vec.dot(inv(h_z_vec.T.dot(h_z_vec)).dot(h_z_vec.T))
-    treat_vec = treat_mat.reshape([d1*d2, 1])
+    treat_vec = np.c_[np.ones(d1*d2).reshape([-1,1]),P_Z @treat_mat.reshape([d1*d2, 1])]
     outcome_vec = outcome_mat.reshape([d1*d2, 1])
-    tau = inv(treat_vec.T @ P_Z @ treat_vec) * (treat_vec.T @ P_Z @ outcome_vec)
+    _,tau = inv(treat_vec.T @  treat_vec) * (treat_vec.T @  outcome_vec)
     return tau
 
 @ray.remote
 def worker_ols(seed, d1, d2, r, tau, noise_sd):
     b, z_vec, treat_mat, outcome_mat = generate_dat(seed, d1, d2, r, tau, noise_sd)
-    treat_vec = treat_mat.reshape([d1*d2, 1])
+    treat_vec = np.c_[np.ones(d1*d2).reshape([-1,1]),treat_mat.reshape([d1*d2, 1])]
+    print(treat_vec.shape)
     outcome_vec = outcome_mat.reshape([d1*d2, 1])
-    tau = inv(treat_vec.T @ treat_vec) * (treat_vec.T @ outcome_vec)
+    _,tau = inv(treat_vec.T @ treat_vec) * (treat_vec.T @ outcome_vec)
     return tau
